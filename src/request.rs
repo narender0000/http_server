@@ -2,6 +2,7 @@ use super::method::Method;
 use anyhow::Context;
 use anyhow::Result;
 use bytes::{Buf, buf::Reader};
+use std::collections::HashMap;
 use std::{
     io::{BufRead, Read},
     net::TcpStream,
@@ -33,8 +34,19 @@ fn parse_raw_request(request: Vec<u8>) -> Result<Request> {
     let method = parse_method_from_request(&mut reader).context("parsing method")?;
 
     let path = parser_path_from_request(&mut reader).context("parsing path")?;
+    let protocol =
+        parse_protocol_from_request(&mut reader).context("parsing protocol from request")?;
+    println!("protocol: {protocol}");
 
-    Ok(Request { method, path })
+    let headers = parse_headers_from_request(&mut reader).context("parsing headers")?;
+    println!("headers: {headers:?}");
+
+    Ok(Request {
+        method,
+        path,
+        protocol,
+        headers,
+    })
 }
 
 fn parse_method_from_request(request: &mut Reader<&[u8]>) -> Result<Method> {
@@ -45,7 +57,6 @@ fn parse_method_from_request(request: &mut Reader<&[u8]>) -> Result<Method> {
         .context("getting method bytes")?;
     Method::try_from(method)
 }
-
 fn parser_path_from_request(request: &mut Reader<&[u8]>) -> Result<String> {
     const SPACE: u8 = b' ';
     let mut path_bytes = vec![];
@@ -58,9 +69,45 @@ fn parser_path_from_request(request: &mut Reader<&[u8]>) -> Result<String> {
         .to_string()
         .to_owned())
 }
+fn parse_protocol_from_request(request: &mut Reader<&[u8]>) -> Result<String> {
+    let mut protocol_bytes = String::new();
+    request
+        .read_line(&mut protocol_bytes)
+        .context("reading protocol bytes")?;
+    Ok(protocol_bytes.to_owned())
+}
+
+pub type Headers = HashMap<String, String>;
+fn parse_headers_from_request(request: &mut Reader<&[u8]>) -> Result<Headers> {
+    let mut headers = HashMap::new();
+    loop {
+        let mut raw_header = String::new();
+        request
+            .read_line(&mut raw_header)
+            .context("readaing header bytes")?;
+        let header = raw_header.trim();
+        if header.is_empty() {
+            break;
+        }
+        let mut header_parts = raw_header.splitn(2, ":");
+        let header_name = header_parts
+            .next()
+            .map(|header| header.trim().to_lowercase());
+        let header_value = header_parts.next().map(|header| header.trim().to_owned());
+
+        if header_name.is_none() || header_value.is_none() {
+            continue;
+        }
+        headers.insert(header_name.unwrap(), header_value.unwrap());
+    }
+    Ok(headers)
+}
 
 #[derive(Debug)]
 pub struct Request {
+    #[allow(dead_code)]
     pub method: Method,
     pub path: String,
+    pub protocol: String,
+    pub headers: Headers,
 }
