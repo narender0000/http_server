@@ -55,7 +55,8 @@ fn parser_path_from_request(request: &mut Reader<&[u8]>) -> Result<String> {
     Ok(String::from_utf8(path_bytes)
         .context("converting path bytes to string")?
         .trim()
-        .to_string())
+        .to_string()
+        .to_owned())
 }
 
 #[derive(Debug)]
